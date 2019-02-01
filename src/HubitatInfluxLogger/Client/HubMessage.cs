@@ -8,5 +8,9 @@
         public string Name { get; set; }
         public string Source { get; set; }
         public string Value { get; set; }
+        public string LocationId { get; set; }
+        public string HubId { get; set; }
+        public string InstalledAppId { get; set; }
+        public string Unit { get; set; }
     }
 }
