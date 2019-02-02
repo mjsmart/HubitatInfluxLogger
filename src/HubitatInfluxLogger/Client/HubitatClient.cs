@@ -53,8 +53,9 @@ namespace HubitatInfluxLogger.Client
             {
                 var hubMessage = JsonConvert.DeserializeObject<HubMessage>(message);
                 var processedMessage = ProcessMessage(hubMessage);
-
-                _collector.Write(hubMessage.Name, processedMessage.Data, processedMessage.Tags);
+                Console.WriteLine($"Writing data: {processedMessage.Data}");
+                Console.WriteLine($"Writing tags: {processedMessage.Tags}");
+                //_collector.Write(hubMessage.Name, processedMessage.Data, processedMessage.Tags);
             }
             catch(Exception ex)
             {

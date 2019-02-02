@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Configuration;
 using System;
 using System.IO;
+using System.Reflection;
 using System.Threading.Tasks;
 
 namespace HubitatInfluxLogger.Client
@@ -15,6 +16,7 @@ namespace HubitatInfluxLogger.Client
             IConfiguration configuration = new ConfigurationBuilder()
                    .SetBasePath(Directory.GetCurrentDirectory()) // Directory where the json files are located
                    .AddJsonFile(APPLICATION_SETTINGS_FILE_NAME, optional: false, reloadOnChange: true)
+                   .AddUserSecrets(typeof(Program).GetTypeInfo().Assembly)
                    .Build();
 
             var hubitatOptions = new HubitatOptions();
