@@ -1,5 +1,6 @@
 ﻿using InfluxDB.Collector;
 using Newtonsoft.Json;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -11,12 +12,14 @@ namespace HubitatInfluxLogger.Client
     public class HubitatClient
     {
         private readonly HubitatOptions _options;
+        private readonly ILogger _logger;
         private readonly WebSocket _webSocket;
         private readonly MetricsCollector _collector;
 
-        public HubitatClient(HubitatOptions options)
+        public HubitatClient(HubitatOptions options, ILogger logger)
         {
             _options = options;
+            _logger = logger;
             _webSocket = new WebSocket(_options.WebSocketURL);
             _webSocket.OnMessage += (sender, e) => MessageReceived(e.Data);
             _webSocket.OnClose += (sender, e) => SocketClosed(e);
@@ -31,50 +34,50 @@ namespace HubitatInfluxLogger.Client
 
         private void SocketOpen(EventArgs e)
         {
-            Console.WriteLine($"Socket Open");
+            _logger.Information("Socket opened");
         }
 
         private void SocketError(ErrorEventArgs e)
         {
-            Console.WriteLine($"Socket Error: {e.Message}");
+            _logger.Error(e.Exception, "Socket error: {Message}", e.Message);
         }
 
         private void SocketClosed(CloseEventArgs e)
         {
-            Console.WriteLine($"Socket Closed");
-            Console.WriteLine($"Reconnecting...");
+            _logger.Warning("Socket closed. Clean: {Clean}, Reason: {Reason}, Code: {Code}", e.WasClean, e.Reason, e.Code);
             _webSocket.Connect();
         }
 
         private void MessageReceived(string message)
         {
-            Console.WriteLine($"Message Received: {message}");
+            _logger.Information("Message Received: {Message}", message);
             try
             {
                 var hubMessage = JsonConvert.DeserializeObject<HubMessage>(message);
                 var processedMessage = ProcessMessage(hubMessage);
-                Console.WriteLine($"Writing data: {processedMessage.Data}");
-                Console.WriteLine($"Writing tags: {processedMessage.Tags}");
-                //_collector.Write(hubMessage.Name, processedMessage.Data, processedMessage.Tags);
+                _logger.Debug("Writing Data: {Data}", processedMessage.Data);
+                _logger.Debug("Writing Tags: {Tags}", processedMessage.Tags);
+                _collector.Write(hubMessage.Name, processedMessage.Data, processedMessage.Tags);
             }
             catch(Exception ex)
             {
-
-                Console.WriteLine($"Error Deserializing Message: {ex.Message}");
+                _logger.Error(ex, "Error deserializing message");
             }
         }
 
         public async Task Start()
         {
-            Console.WriteLine($"Connecting...");
+            _logger.Debug("Starting Hubitat Client");
             _webSocket.Connect();
         }
 
         public async Task Stop()
         {
-            if(_webSocket.ReadyState == WebSocketState.Open)
+            _logger.Debug("Stopping Hubitat Client");
+            if (_webSocket.ReadyState == WebSocketState.Open)
             {
-                Console.WriteLine($"Socket Closing...");
+
+                _logger.Debug("Closing WebSocket");
                 _webSocket.CloseAsync(CloseStatusCode.Normal);
             }
 
