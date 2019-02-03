@@ -80,7 +80,7 @@ namespace HubitatInfluxLogger.Client
                 var processedMessage = ProcessMessage(hubMessage);
                 _logger.Debug("Writing Data: {Data}", processedMessage.Data);
                 _logger.Debug("Writing Tags: {Tags}", processedMessage.Tags);
-                //_collector.Write(hubMessage.Name, processedMessage.Data, processedMessage.Tags);
+                _collector.Write(hubMessage.Name, processedMessage.Data, processedMessage.Tags);
             }
             catch(Exception ex)
             {
