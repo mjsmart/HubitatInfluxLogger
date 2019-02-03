@@ -5,7 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
-using WebSocketSharp;
+using PureWebSockets;
+using System.Net.WebSockets;
 
 namespace HubitatInfluxLogger.Client
 {
@@ -13,18 +14,30 @@ namespace HubitatInfluxLogger.Client
     {
         private readonly HubitatOptions _options;
         private readonly ILogger _logger;
-        private readonly WebSocket _webSocket;
+        private readonly PureWebSocket _webSocket;
         private readonly MetricsCollector _collector;
 
         public HubitatClient(HubitatOptions options, ILogger logger)
         {
             _options = options;
             _logger = logger;
-            _webSocket = new WebSocket(_options.WebSocketURL);
-            _webSocket.OnMessage += (sender, e) => MessageReceived(e.Data);
-            _webSocket.OnClose += (sender, e) => SocketClosed(e);
-            _webSocket.OnError += (sender, e) => SocketError(e);
-            _webSocket.OnOpen += (sender, e) => SocketOpen(e);
+
+            var socketOptions = new PureWebSocketOptions()
+            {
+                DebugMode = true,
+                SendDelay = 100,
+                IgnoreCertErrors = true,
+                MyReconnectStrategy = new ReconnectStrategy(2000, 4000, 20)
+            };
+
+            _webSocket = new PureWebSocket(_options.WebSocketURL, socketOptions);
+            _webSocket.OnOpened += () => SocketOpen();
+            _webSocket.OnStateChanged += (newState, previousState) => SocketStateChanged(newState, previousState);
+            _webSocket.OnMessage += (message) => MessageReceived(message);
+            _webSocket.OnClosed += (reason) => SocketClosed(reason);
+            _webSocket.OnSendFailed += (data, ex) => SocketSendFailed(data, ex);
+            
+            _webSocket.OnError += (e) => SocketError(e);
 
             _collector = Metrics.Collector = new CollectorConfiguration()
                 .Batch.AtInterval(TimeSpan.FromSeconds(options.BatchInterval))
@@ -32,19 +45,29 @@ namespace HubitatInfluxLogger.Client
                 .CreateCollector();           
         }
 
-        private void SocketOpen(EventArgs e)
+        private void SocketSendFailed(string data, Exception ex)
+        {
+            _logger.Error(ex, "Failed to send message {Data}", data);
+        }
+
+        private void SocketStateChanged(WebSocketState newState, WebSocketState prevState)
+        {
+            _logger.Information("Socket state changed from {PreviousState} to {NewState}", prevState, newState);
+        }
+
+        private void SocketOpen()
         {
             _logger.Information("Socket opened");
         }
 
-        private void SocketError(ErrorEventArgs e)
+        private void SocketError(Exception e)
         {
-            _logger.Error(e.Exception, "Socket error: {Message}", e.Message);
+            _logger.Error(e, "Socket error: {Message}", e.Message);
         }
 
-        private void SocketClosed(CloseEventArgs e)
+        private void SocketClosed(WebSocketCloseStatus  reason)
         {
-            _logger.Warning("Socket closed. Clean: {Clean}, Reason: {Reason}, Code: {Code}", e.WasClean, e.Reason, e.Code);
+            _logger.Warning("Socket closed. Reason: {Reason}", reason);
             _webSocket.Connect();
         }
 
@@ -57,7 +80,7 @@ namespace HubitatInfluxLogger.Client
                 var processedMessage = ProcessMessage(hubMessage);
                 _logger.Debug("Writing Data: {Data}", processedMessage.Data);
                 _logger.Debug("Writing Tags: {Tags}", processedMessage.Tags);
-                _collector.Write(hubMessage.Name, processedMessage.Data, processedMessage.Tags);
+                //_collector.Write(hubMessage.Name, processedMessage.Data, processedMessage.Tags);
             }
             catch(Exception ex)
             {
@@ -68,17 +91,26 @@ namespace HubitatInfluxLogger.Client
         public async Task Start()
         {
             _logger.Debug("Starting Hubitat Client");
-            _webSocket.Connect();
-        }
+
+            try
+            {
+                await _webSocket.ConnectAsync();
+            }
+            catch(Exception ex)
+            {
+                _logger.Error(ex, "Error starting WebSocket client");
+                throw;
+            }
+        } 
 
         public async Task Stop()
         {
             _logger.Debug("Stopping Hubitat Client");
-            if (_webSocket.ReadyState == WebSocketState.Open)
+            if (_webSocket.State != WebSocketState.Closed)
             {
 
                 _logger.Debug("Closing WebSocket");
-                _webSocket.CloseAsync(CloseStatusCode.Normal);
+                _webSocket.Disconnect();
             }
 
             Metrics.Close();

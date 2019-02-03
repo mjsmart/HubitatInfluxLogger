@@ -35,8 +35,6 @@ namespace HubitatInfluxLogger.Client
             Log.Information("Configured to write data to {InfluxDbDatabase} at {InfluxDbURL}", hubitatOptions.InfluxDbDatabase,  hubitatOptions.InfluxDbURL);
 
             _hubitat = new HubitatClient(hubitatOptions, Log.ForContext<HubitatClient>());
-            await _hubitat.Start();
-            Log.Information("Started Hubitat Client");
 
 
             using (var shutdownCts = new CancellationTokenSource())
