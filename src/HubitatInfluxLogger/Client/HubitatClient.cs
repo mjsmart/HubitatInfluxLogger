@@ -7,6 +7,8 @@ using System.Text;
 using System.Threading.Tasks;
 using PureWebSockets;
 using System.Net.WebSockets;
+using InfluxDB.Collector.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace HubitatInfluxLogger.Client
 {
@@ -42,7 +44,12 @@ namespace HubitatInfluxLogger.Client
             _collector = Metrics.Collector = new CollectorConfiguration()
                 .Batch.AtInterval(TimeSpan.FromSeconds(options.BatchInterval))
                 .WriteTo.InfluxDB(options.InfluxDbURL, options.InfluxDbDatabase, options.InfluxDbUsername, options.InfluxDbPassword)
-                .CreateCollector();           
+                .CreateCollector();
+
+            CollectorLog.RegisterErrorHandler((string message, Exception ex) =>
+            {
+                _logger.Error(ex, "Failed to write metrics to InfluxDB: {Message}", message);
+            });
         }
 
         private void SocketSendFailed(string data, Exception ex)
@@ -78,14 +85,50 @@ namespace HubitatInfluxLogger.Client
             {
                 var hubMessage = JsonConvert.DeserializeObject<HubMessage>(message);
                 var processedMessage = ProcessMessage(hubMessage);
-                _logger.Debug("Writing Data: {Data}", processedMessage.Data);
-                _logger.Debug("Writing Tags: {Tags}", processedMessage.Tags);
-                _collector.Write(hubMessage.Name, processedMessage.Data, processedMessage.Tags);
+
+                if (MessageShouldBeLogged(processedMessage))
+                {
+                    _logger.Debug("Writing Data: {Data}", processedMessage.Data);
+                    _logger.Debug("Writing Tags: {Tags}", processedMessage.Tags);
+                    _collector.Write(hubMessage.Name, processedMessage.Data, processedMessage.Tags, processedMessage.LoggedAt);
+                }
+                else
+                {
+                    _logger.Information("Ignoring measurement");
+                }
             }
             catch(Exception ex)
             {
                 _logger.Error(ex, "Error deserializing message");
             }
+        }
+
+        private bool MessageShouldBeLogged(InfluxMeasurement measurement) {
+            bool messageShouldBeLogged = true;
+            var deviceId = measurement.Tags["deviceId"];
+            var measurementName = measurement.Name;
+
+            if(_options.DevicesToLog.Count > 0 && !_options.DevicesToLog.Contains(deviceId))
+            {
+                messageShouldBeLogged = false;
+            }
+
+            if (_options.DevicesToIgnore.Contains(deviceId))
+            {
+                messageShouldBeLogged = false;
+            }
+
+            if (_options.MeasurementsToLog.Count > 0 && !_options.MeasurementsToLog.Contains(measurementName))
+            {
+                messageShouldBeLogged = false;
+            }
+
+            if (_options.MeasurementsToIgnore.Contains(measurementName))
+            {
+                messageShouldBeLogged = false;
+            }
+
+            return messageShouldBeLogged;
         }
 
         public async Task Start()
@@ -116,165 +159,208 @@ namespace HubitatInfluxLogger.Client
             Metrics.Close();
         }
 
-        public (Dictionary<string, object> Data, Dictionary<string, string> Tags) ProcessMessage(HubMessage message)
+        public InfluxMeasurement ProcessMessage(HubMessage message)
         {
-            var tags = new Dictionary<string, string>();
-            var data = new Dictionary<string, object>();
+            var measurement = new InfluxMeasurement();
+            measurement.Name = message.Name;
 
-            tags.Add("deviceName", message.DisplayName);
-            tags.Add("deviceId", message.DeviceId);
-            tags.Add("locationId", message.LocationId);
-            tags.Add("hubId", message.HubId);
-            tags.Add("installedAppId", message.InstalledAppId);
-            tags.Add("source", message.Source);
+            measurement.Tags.Add("deviceName", message.DisplayName);
+            measurement.Tags.Add("deviceId", message.DeviceId);
+            measurement.Tags.Add("locationId", message.LocationId);
+            measurement.Tags.Add("hubId", message.HubId);
+            measurement.Tags.Add("installedAppId", message.InstalledAppId);
+            measurement.Tags.Add("source", message.Source);
 
 
             switch (message.Name)
             {
                 case "acceleration":
-                    tags.Add("unit", "acceleration");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "active" ? 1 : 0);
+                    measurement.Tags.Add("unit", "acceleration");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "active" ? 1 : 0);
                     break;
                 case "alarm":
-                    tags.Add("unit", "alarm");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "off" ? 0 : 1);
+                    measurement.Tags.Add("unit", "alarm");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "off" ? 0 : 1);
                     break;
                 case "button":
-                    tags.Add("unit", "button");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "pushed" ? 0 : 1);
+                    measurement.Tags.Add("unit", "button");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "pushed" ? 0 : 1);
                     break;
                 case "carbonMonoxide":
-                    tags.Add("unit", "carbonMonoxide");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "detected" ? 1 : 0);
+                    measurement.Tags.Add("unit", "carbonMonoxide");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "detected" ? 1 : 0);
                     break;
                 case "consumableStatus":
-                    tags.Add("unit", "consumableStatus");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "good" ? 1 : 0);
+                    measurement.Tags.Add("unit", "consumableStatus");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "good" ? 1 : 0);
                     break;
                 case "contact":
-                    tags.Add("unit", "contact");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "closed" ? 1 : 0);
+                    measurement.Tags.Add("unit", "contact");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "closed" ? 1 : 0);
                     break;
                 case "door":
-                    tags.Add("unit", "door");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "closed" ? 1 : 0);
+                    measurement.Tags.Add("unit", "door");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "closed" ? 1 : 0);
+                    break;
+                case "lastCheckin":
+                    measurement.Tags.Add("unit", "ticks");
+                    measurement.Data.Add("value", message.Value);
+                    break;
+                case "lastInactive":
+                    measurement.Tags.Add("unit", "ticks");
+                    measurement.Data.Add("value", message.Value);
+                    break;
+                case "lastMotion":
+                    measurement.Tags.Add("unit", "ticks");
+                    measurement.Data.Add("value", message.Value);
                     break;
                 case "lock":
-                    tags.Add("unit", "lock");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "locked" ? 1 : 0);
+                    measurement.Tags.Add("unit", "lock");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "locked" ? 1 : 0);
                     break;
                 case "motion":
-                    tags.Add("unit", "motion");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "active" ? 1 : 0);
+                    measurement.Tags.Add("unit", "motion");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "active" ? 1 : 0);
                     break;
                 case "mute":
-                    tags.Add("unit", "mute");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "muted" ? 1 : 0);
+                    measurement.Tags.Add("unit", "mute");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "muted" ? 1 : 0);
                     break;
                 case "presence":
-                    tags.Add("unit", "presence");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "present" ? 1 : 0);
+                    measurement.Tags.Add("unit", "presence");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "present" ? 1 : 0);
                     break;
                 case "shock":
-                    tags.Add("unit", "shock");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "detected" ? 1 : 0);
+                    measurement.Tags.Add("unit", "shock");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "detected" ? 1 : 0);
                     break;
                 case "sleeping":
-                    tags.Add("unit", "sleeping");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "sleeping" ? 1 : 0);
+                    measurement.Tags.Add("unit", "sleeping");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "sleeping" ? 1 : 0);
                     break;
                 case "smoke":
-                    tags.Add("unit", "smoke");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "detected" ? 1 : 0);
+                    measurement.Tags.Add("unit", "smoke");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "detected" ? 1 : 0);
                     break;
                 case "sound":
-                    tags.Add("unit", "sound");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "detected" ? 1 : 0);
+                    measurement.Tags.Add("unit", "sound");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "detected" ? 1 : 0);
                     break;
                 case "switch":
-                    tags.Add("unit", "switch");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "on" ? 1 : 0);
+                    measurement.Tags.Add("unit", "switch");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "on" ? 1 : 0);
                     break;
                 case "tamper":
-                    tags.Add("unit", "tamper");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "detected" ? 1 : 0);
+                    measurement.Tags.Add("unit", "tamper");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "detected" ? 1 : 0);
                     break;
                 case "thermostatMode":
-                    tags.Add("unit", "thermostatMode");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "off" ? 0 : 1);
+                    measurement.Tags.Add("unit", "thermostatMode");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "off" ? 0 : 1);
                     break;
                 case "thermostatFanMode":
-                    tags.Add("unit", "thermostatFanMode");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "off" ? 0 : 1);
+                    measurement.Tags.Add("unit", "thermostatFanMode");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "off" ? 0 : 1);
                     break;
                 case "thermostatOperatingState":
-                    tags.Add("unit", "thermostatOperatingState");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "heating" ? 1: 0);
+                    measurement.Tags.Add("unit", "thermostatOperatingState");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "heating" ? 1: 0);
                     break;
                 case "thermostatSetpointMode":
-                    tags.Add("unit", "thermostatSetpointMode");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "followSchedule" ? 0 : 1);
+                    measurement.Tags.Add("unit", "thermostatSetpointMode");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "followSchedule" ? 0 : 1);
                     break;
                 case "threeAxis":
-                    tags.Add("unit", "threeAxis");
+                    measurement.Tags.Add("unit", "threeAxis");
                     var valueXYZ = message.Value.Split(",", StringSplitOptions.RemoveEmptyEntries);
-                    data.Add("valueX", $"{message.Value[0]}i");
-                    data.Add("valueY", $"{message.Value[1]}i");
-                    data.Add("valueZ", $"{message.Value[2]}i");
+
+                    if (int.TryParse(valueXYZ[0], out int x))
+                    {
+                        measurement.Data.Add("valueX", x);
+                    }
+
+
+                    if (int.TryParse(valueXYZ[1], out int y))
+                    {
+                        measurement.Data.Add("valueY", y);
+                    }
+
+
+                    if (int.TryParse(valueXYZ[2], out int z))
+                    {
+                        measurement.Data.Add("valueZ", z);
+                    }
                     break;
                 case "touch":
-                    tags.Add("unit", "touch");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "touched" ? 1 : 0);
+                    measurement.Tags.Add("unit", "touch");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "touched" ? 1 : 0);
                     break;
                 case "optimisation":
-                    tags.Add("unit", "optimisation");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "active" ? 1 : 0);
+                    measurement.Tags.Add("unit", "optimisation");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "active" ? 1 : 0);
                     break;
                 case "windowFunction":
-                    tags.Add("unit", "windowFunction");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "active" ? 1 : 0);
+                    measurement.Tags.Add("unit", "windowFunction");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "active" ? 1 : 0);
                     break;
                 case "water":
-                    tags.Add("unit", "water");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "wet" ? 1 : 0);
+                    measurement.Tags.Add("unit", "water");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "wet" ? 1 : 0);
                     break;
                 case "windowShade":
-                    tags.Add("unit", "windowShade");
-                    data.Add("value", message.Value);
-                    data.Add("valueBinary", message.Value == "closed" ? 1 : 0);
-                    break;
-                default:
-                    tags.Add("unit", message.Unit);
-                    data.Add("value", message.Value);
+                    measurement.Tags.Add("unit", "windowShade");
+                    measurement.Data.Add("value", message.Value);
+                    measurement.Data.Add("valueBinary", message.Value == "closed" ? 1 : 0);
                     break;
             }
 
-            return (data, tags);
+            if(measurement.Data.Count == 0)
+            {
+                if(Regex.IsMatch(message.Value, @"/.*[^0-9\.,-].*/"))
+                {
+                    measurement.Data.Add("value", message.Value);
+                }
+                else
+                {
+                    measurement.Tags.Add("unit", message.Unit);
+
+                    if(float.TryParse(message.Value, out float floatVal))
+                    {
+                        measurement.Data.Add("value", floatVal);
+                    }
+                    else
+                    {
+                        measurement.Data.Add("value", message.Value);
+                    }
+                }
+            }
+
+            return measurement;
         }
     }
 }
