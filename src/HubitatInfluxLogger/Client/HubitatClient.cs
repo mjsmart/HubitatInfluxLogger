@@ -84,6 +84,13 @@ namespace HubitatInfluxLogger.Client
             try
             {
                 var hubMessage = JsonConvert.DeserializeObject<HubMessage>(message);
+
+                if (string.IsNullOrWhiteSpace(hubMessage.Value))
+                {
+                    _logger.Warning("Ignoring message from device {DeviceId} with no value specified", hubMessage.DeviceId);
+                    return;
+                }
+
                 var processedMessage = ProcessMessage(hubMessage);
 
                 if (MessageShouldBeLogged(processedMessage))
@@ -99,7 +106,7 @@ namespace HubitatInfluxLogger.Client
             }
             catch(Exception ex)
             {
-                _logger.Error(ex, "Error deserializing message");
+                _logger.Error(ex, "Error deserializing message '{Message}'", message);
             }
         }
 
