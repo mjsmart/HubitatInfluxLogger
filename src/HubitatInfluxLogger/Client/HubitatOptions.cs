@@ -28,5 +28,11 @@ namespace HubitatInfluxLogger.Client
         public List<string> MeasurementsToLog { get; set; }
 
         public List<string> MeasurementsToIgnore { get; set; }
+
+        public int MinReconnectInterval { get; set; }
+
+        public int MaxReconnectInterval { get; set; }
+
+        public int? MaxReconnectAttempts { get; set; }
     }
 }

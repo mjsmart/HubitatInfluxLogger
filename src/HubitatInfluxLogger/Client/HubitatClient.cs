@@ -29,7 +29,7 @@ namespace HubitatInfluxLogger.Client
                 DebugMode = true,
                 SendDelay = 100,
                 IgnoreCertErrors = true,
-                MyReconnectStrategy = new ReconnectStrategy(2000, 4000, 20)
+                MyReconnectStrategy = new ReconnectStrategy(options.MinReconnectInterval, options.MaxReconnectInterval, options.MaxReconnectAttempts)
             };
 
             _webSocket = new PureWebSocket(_options.WebSocketURL, socketOptions);
