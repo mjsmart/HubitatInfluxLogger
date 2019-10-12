@@ -33,13 +33,12 @@ namespace HubitatInfluxLogger.Client
             };
 
             _webSocket = new PureWebSocket(_options.WebSocketURL, socketOptions);
-            _webSocket.OnOpened += () => SocketOpen();
-            _webSocket.OnStateChanged += (newState, previousState) => SocketStateChanged(newState, previousState);
-            _webSocket.OnMessage += (message) => MessageReceived(message);
-            _webSocket.OnClosed += (reason) => SocketClosed(reason);
-            _webSocket.OnSendFailed += (data, ex) => SocketSendFailed(data, ex);
-            
-            _webSocket.OnError += (e) => SocketError(e);
+            _webSocket.OnOpened += (sender) => SocketOpen();
+            _webSocket.OnStateChanged += (sender, newState, previousState) => SocketStateChanged(newState, previousState);
+            _webSocket.OnMessage += (sender, message) => MessageReceived(message);
+            _webSocket.OnClosed += (sender, reason) => SocketClosed(reason);
+            _webSocket.OnSendFailed += (sender, data, ex) => SocketSendFailed(data, ex);        
+            _webSocket.OnError += (sender, e) => SocketError(e);
 
             _collector = Metrics.Collector = new CollectorConfiguration()
                 .Batch.AtInterval(TimeSpan.FromSeconds(options.BatchInterval))

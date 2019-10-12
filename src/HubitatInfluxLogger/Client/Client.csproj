@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp2.2</TargetFramework>
+    <TargetFramework>netcoreapp3.0</TargetFramework>
     <RootNamespace>HubitatInfluxLogger.Client</RootNamespace>
     <LangVersion>latest</LangVersion>
     <UserSecretsId>hubitatinfluxlogger-client-7fb8f9c8-1563-4cea-96a2-7e196d01c25b</UserSecretsId>
@@ -20,11 +20,11 @@
 
   <ItemGroup>
     <PackageReference Include="InfluxDB.Collector" Version="1.1.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="2.2.4" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="2.2.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="2.2.0" />
-    <PackageReference Include="PureWebSockets" Version="2.4.3" />
-    <PackageReference Include="Serilog.Settings.Configuration" Version="3.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="3.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="3.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="3.0.0" />
+    <PackageReference Include="PureWebSockets" Version="3.0.0" />
+    <PackageReference Include="Serilog.Settings.Configuration" Version="3.1.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="3.1.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="4.0.0" />
   </ItemGroup>
